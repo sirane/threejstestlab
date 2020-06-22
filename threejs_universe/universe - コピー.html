@@ -1,0 +1,260 @@
+<html>
+
+<head>
+  <meta charset="utf-8" />
+
+  <style>
+    body {
+      margin: 0;
+    }
+
+    div.info {
+      position: absolute;
+    }
+  </style>
+
+</head>
+
+<body>
+
+  <div class="info">
+    <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> webgl - interactive cubes
+  </div>
+
+  <script type="module">
+
+    import * as THREE from './js/three.module.js';
+
+    import { OrbitControls } from './jsm/controls/OrbitControls.js';
+    import Stats from './jsm/libs/stats.module.js';
+    import { GUI } from './jsm/libs/dat.gui.module.js';
+
+    import { CinematicCamera } from './jsm/cameras/CinematicCamera.js';
+
+    var camera, scene, raycaster, renderer, controls, stats, planets;
+
+    var mouse = new THREE.Vector2(), INTERSECTED;
+    var radius = 100, theta = 0, tick_frame = 1;
+    var universe_size = 500;
+    const PLANET_SCALE = 0.01;
+    const ROT_SPEED = 0.04;
+    const CAMERA_DISTANCE = 1200;
+    const UNIVERSE_SIZE = 1000;
+
+    function normalize_3dvec(x,y,z){
+      let leng = Math.sqrt( x*x + y*y + z*z );
+      return [ x/leng, y/leng, z/leng ];
+    }
+
+    // rot_distance : MAX 1000
+    var planets = [
+      { 'size': 100, 'rot_distance': 100, 'rot_tilt': 0, 'rot_compress': normalize_3dvec(0,1,0) , 'rot_speed': 0.3 },
+      { 'size': 200, 'rot_distance': 220, 'rot_tilt': 40, 'rot_compress': normalize_3dvec(0,1,0) , 'rot_speed': 0.5},
+      { 'size': 100, 'rot_distance': 430, 'rot_tilt': 0, 'rot_compress': normalize_3dvec(0,1,0) , 'rot_speed': 1.0},
+      { 'size': 60, 'rot_distance': 600, 'rot_tilt': 190, 'rot_compress': normalize_3dvec(0,1,0) , 'rot_speed': 0.8},
+      { 'size': 100, 'rot_distance': 800, 'rot_tilt': 90, 'rot_compress': normalize_3dvec(0,1,0) , 'rot_speed': 0.9},
+      { 'size': 300, 'rot_distance': 900, 'rot_tilt': 30, 'rot_compress': normalize_3dvec(0,1,0) , 'rot_speed': 1.1}
+    ];
+
+    init();
+    animate();
+
+    function init() {
+      // * Scene 
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x000000);
+
+      scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+
+      // * camera 
+      camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 1, CAMERA_DISTANCE * 3);
+      camera.lookAt(0, 0, 0);
+      camera.position.set(2, 1, CAMERA_DISTANCE);
+      // camera = new CinematicCamera(60, window.innerWidth / window.innerHeight, 1, 1000);
+      // camera.setLens(0);
+      // camera.position.set(2, 1, universe_size * 10);
+
+      // * Ligting 
+      var light = new THREE.DirectionalLight(0xffffff, 0.65);
+      light.position.set(1, 1, 1).normalize();
+      scene.add(light);
+
+      // * Create common geometry 
+      // var geometry = new THREE.BoxBufferGeometry(20, 20, 20);
+      var geometry = new THREE.SphereGeometry(20, 20, 20);
+      // Permit change position every frame.
+      geometry.verticesNeedUpdate=true;
+      
+      // * Create meshs
+      for (var i = 0; i < planets.length; i++) {
+        let planet = planets[i];
+        var object = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ color: Math.random() * 0xffffff }));
+
+        object.position.x = universe_size * i / planets.length - universe_size / 2;
+        object.position.y = 0;
+        object.position.z = Math.random() * universe_size - universe_size / 2;
+
+        object.scale.set(planet['size'] * PLANET_SCALE, planet['size'] * PLANET_SCALE, planet['size'] * PLANET_SCALE);
+
+        planet['obj_mesh'] = object;
+        scene.add(object);
+      }
+
+      raycaster = new THREE.Raycaster();
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      // * Orbit controls
+      // controls = new OrbitControls(camera, renderer.domElement);
+      // controls.maxPolarAngle = Math.PI * 0.5;
+      // controls.minDistance = 1;
+      // controls.maxDistance = 100;
+      // controls.addEventListener('change', render);
+
+      stats = new Stats();
+      document.body.appendChild(stats.dom);
+
+      document.addEventListener('mousemove', onDocumentMouseMove, false);
+
+      window.addEventListener('resize', onWindowResize, false);
+
+      var effectController = {
+
+        focalLength: 15,
+        // jsDepthCalculation: true,
+        // shaderFocus: false,
+        //
+        fstop: 2.8,
+        // maxblur: 1.0,
+        //
+        showFocus: false,
+        focalDepth: 3,
+        // manualdof: false,
+        // vignetting: false,
+        // depthblur: false,
+        //
+        // threshold: 0.5,
+        // gain: 2.0,
+        // bias: 0.5,
+        // fringe: 0.7,
+        //
+        // focalLength: 35,
+        // noise: true,
+        // pentagon: false,
+        //
+        // dithering: 0.0001
+      }
+      //
+
+      var gui = new GUI();
+
+
+      window.addEventListener('resize', onWindowResize, false);
+
+    }
+
+    function onWindowResize() {
+
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+
+      renderer.setSize(window.innerWidth, window.innerHeight);
+
+    }
+
+    function onDocumentMouseMove(event) {
+
+      event.preventDefault();
+
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
+
+    }
+
+    function animate() {
+      // move planets per frame
+      planets.forEach(planet => {
+        
+        // ex: {'size':100, 'rot_distance':100, 'rot_tilt':0 ,'rot_compress': 0 },
+        let object = planet['obj_mesh'];
+        object.position.x = planet['rot_distance'];
+        object.position.y = 0;
+        object.position.z = 0;
+
+        // 1. get quaternion
+        var quaternion = object.quaternion;
+
+        // 2. Create quaternion
+        var target = new THREE.Quaternion();
+        let rot_compress = planet['rot_compress'];
+        var axis = new THREE.Vector3(rot_compress[0], rot_compress[1], rot_compress[2]).normalize();
+        target.setFromAxisAngle(axis, tick_frame * ROT_SPEED * planet['rot_speed'] );
+
+        // 3. execute rotate.
+        quaternion.multiply(target);
+      });
+
+      tick_frame++;
+
+      requestAnimationFrame(animate, renderer.domElement);
+
+      render();
+      stats.update();
+
+    }
+
+
+    function render() {
+
+      // camera.position.x = CAMERA_DISTANCE * Math.sin(THREE.MathUtils.degToRad(tick_frame));
+      // camera.position.y = CAMERA_DISTANCE * Math.sin(THREE.MathUtils.degToRad(tick_frame));
+      // camera.position.z = CAMERA_DISTANCE * Math.cos(THREE.MathUtils.degToRad(tick_frame));
+      // camera.lookAt(scene.position);
+
+      // camera.updateMatrixWorld();
+
+      // find intersections
+
+      raycaster.setFromCamera(mouse, camera);
+
+      var intersects = raycaster.intersectObjects(scene.children);
+
+      if (intersects.length > 0) {
+
+        var targetDistance = intersects[0].distance;
+
+
+        if (INTERSECTED != intersects[0].object) {
+
+          if (INTERSECTED) INTERSECTED.material.emissive.setHex(INTERSECTED.currentHex);
+
+          INTERSECTED = intersects[0].object;
+          INTERSECTED.currentHex = INTERSECTED.material.emissive.getHex();
+          INTERSECTED.material.emissive.setHex(0xff0000);
+
+        }
+
+      } else {
+
+        if (INTERSECTED) INTERSECTED.material.emissive.setHex(INTERSECTED.currentHex);
+
+        INTERSECTED = null;
+
+      }
+
+      //
+
+      //scene.overrideMaterial = null;
+
+      renderer.clear();
+      renderer.render(scene, camera);
+
+    }
+
+  </script>
+</body>
+
+</html>

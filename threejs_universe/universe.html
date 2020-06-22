@@ -1,0 +1,385 @@
+<html>
+
+<head>
+  <meta charset="utf-8" />
+
+  <style>
+    body {
+      margin: 0;
+    }
+
+    div.info {
+      position: absolute;
+    }
+  </style>
+
+</head>
+
+<body>
+
+  <div class="info">
+    <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> webgl - interactive cubes
+  </div>
+
+  <script type="x-shader/x-vertex" id="vertexshader">
+
+    attribute float size;
+    varying vec3 vColor;
+
+    void main() {
+      vColor = color;
+      vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+      gl_PointSize = size * ( 300.0 / -mvPosition.z );
+      gl_Position = projectionMatrix * mvPosition;
+    }
+
+  </script>
+
+  <script type="x-shader/x-fragment" id="fragmentshader">
+
+    uniform sampler2D pointTexture;
+    varying vec3 vColor;
+    void main() {
+      gl_FragColor = vec4( vColor, 1.0 );
+      gl_FragColor = gl_FragColor * texture2D( pointTexture, gl_PointCoord );
+    }
+
+  </script>
+
+  <script type="module">
+
+    import * as THREE from './js/three.module.js';
+
+    import { OrbitControls } from './jsm/controls/OrbitControls.js';
+    import Stats from './jsm/libs/stats.module.js';
+    import { GUI } from './jsm/libs/dat.gui.module.js';
+
+    import { CinematicCamera } from './jsm/cameras/CinematicCamera.js';
+
+    var camera, scene, raycaster, renderer, controls, stats, planets;
+    var particleSystem, uniforms, geometry_particles;
+    var mouse = new THREE.Vector2(), INTERSECTED;
+    var radius = 100, theta = 0, tick_frame = 1000;
+    const PLANET_SCALE = 0.006;
+    const ROT_SPEED = 0.01;
+    const CAMERA_DISTANCE = 1200;
+    const UNIVERSE_SIZE = 1000;
+    const PARTICLES = 1000;
+
+    // rot_distance : MAX 1000
+    var planets = [
+      { 'name':'sun1', 'size': 800, 'rot_distance': 0, 'rot_tilt': 0, 'rot_compress': 0, 'rot_speed': 0.3 },
+      { 'name':'sun2', 'size': 800, 'rot_distance': 0, 'rot_tilt': 0, 'rot_compress': 0, 'rot_speed': 0.3 },
+      { 'name':'', 'size': 300, 'rot_distance': 400, 'rot_tilt': 0, 'rot_compress': 0, 'rot_speed': 0.3 },
+      { 'name':'', 'size': 400, 'rot_distance': 520, 'rot_tilt': 40, 'rot_compress': 0, 'rot_speed': 0.5 },
+      { 'name':'', 'size': 500, 'rot_distance': 630, 'rot_tilt': 0, 'rot_compress': 0, 'rot_speed': 1.0 },
+      { 'name':'', 'size': 60, 'rot_distance': 700, 'rot_tilt': 190, 'rot_compress': 0, 'rot_speed': 0.8 },
+      { 'name':'', 'size': 300, 'rot_distance': 800, 'rot_tilt': 90, 'rot_compress': 0, 'rot_speed': 0.9 },
+      { 'name':'', 'size': 300, 'rot_distance': 900, 'rot_tilt': 30, 'rot_compress': 0, 'rot_speed': 1.1 }
+    ];
+
+    init();
+    animate();
+
+    function init() {
+      // * Scene 
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x000000);
+      8
+      scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+
+      // * camera 
+      camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 1, CAMERA_DISTANCE * 3);
+      camera.lookAt(0, 0, 0);
+      camera.position.set(0, CAMERA_DISTANCE / 5, CAMERA_DISTANCE);
+      // camera = new CinematicCamera(60, window.innerWidth / window.innerHeight, 1, 1000);
+      // camera.setLens(0);
+      // camera.position.set(2, 1, UNIVERSE_SIZE * 10);
+
+      // * Ligting 
+      var light = new THREE.DirectionalLight(0xffffff, 0.65);
+      light.position.set(1, 1, 1).normalize();
+      scene.add(light);
+
+      // new THREE.PointLight(色, 光の強さ, 距離, 光の減衰率)
+      const light_point = new THREE.PointLight(0xFFFFFF, 3, UNIVERSE_SIZE, 0.5);
+      scene.add(light_point);
+
+      { // create circle geometry
+        // TODO:
+      }
+
+      { // Draw particles
+
+        uniforms = {
+
+          pointTexture: { value: new THREE.TextureLoader().load("images/sun.jpg") }
+
+        };
+
+        var shaderMaterialPARTICLES = new THREE.ShaderMaterial({
+
+          uniforms: uniforms,
+          vertexShader: document.getElementById('vertexshader').textContent,
+          fragmentShader: document.getElementById('fragmentshader').textContent,
+
+          blending: THREE.AdditiveBlending,
+          depthTest: false,
+          transparent: true,
+          vertexColors: true
+
+        });
+
+        var radius = 700;
+
+        geometry_particles = new THREE.BufferGeometry();
+
+        var positions = [];
+        var colors = [];
+        var sizes = [];
+
+        var color = new THREE.Color();
+
+        for (var i = 0; i < PARTICLES; i++) {
+
+          positions.push((Math.random() * 2 - 1) * radius);
+          positions.push((Math.random() * 2 - 1) * radius);
+          positions.push((Math.random() * 2 - 1) * radius);
+
+          color.setHSL(i / PARTICLES, 1.0, 0.5);
+
+          colors.push(color.r, color.g, color.b);
+
+          sizes.push(10);
+
+        }
+
+        geometry_particles.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry_particles.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        geometry_particles.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1).setUsage(THREE.DynamicDrawUsage));
+
+        particleSystem = new THREE.Points(geometry_particles, shaderMaterialPARTICLES);
+
+        scene.add(particleSystem);
+
+      }
+
+      // * Create common geometry 
+      {
+        // var geometry = new THREE.BoxBufferGeometry(20, 20, 20);
+        var geometry = new THREE.SphereGeometry(20, 20, 20);
+        // Permit change position every frame.
+        geometry.verticesNeedUpdate = true;
+
+        // * load texture
+        var texture_samples = [
+          new THREE.TextureLoader().load('images/sun.jpg'),
+          new THREE.TextureLoader().load('images/floor_it.jpg'),
+          new THREE.TextureLoader().load('images/_Grass_D.jpg'),
+          new THREE.TextureLoader().load('images/Field_Sq.jpg'),
+          new THREE.TextureLoader().load('images/Metal_St.jpg'),
+          new THREE.TextureLoader().load('images/roof_1.jpg'),
+        ];
+
+        var material_cercle = new THREE.MeshLambertMaterial({ color: 0xffffff, wireframe: true });
+        var geometry_cercle = new THREE.CircleGeometry(20, 100);
+
+        // * Create meshs
+        for (var i = 0; i < planets.length; i++) {
+          let planet = planets[i];
+          if (i == 0) {
+            var object = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ map: texture_samples[0], color: 0xffaaaa }));
+          } else if (i == 1) {
+            var object = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ map: texture_samples[0], emissive:0xdd3333 , color: 0xff8888, blending: THREE.AdditiveBlendin , depthWrite: false }));
+          } else if (i >= 2) {
+            var object = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ map: texture_samples[1 + i % 5] }));
+          } else {
+            var object = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ color: Math.random() * 0xffffff }));
+          }
+
+          object.position.x = UNIVERSE_SIZE * i / planets.length - UNIVERSE_SIZE / 2;
+          object.position.y = 0;
+          object.position.z = Math.random() * UNIVERSE_SIZE - UNIVERSE_SIZE / 2;
+
+          object.scale.set(planet['size'] * PLANET_SCALE, planet['size'] * PLANET_SCALE, planet['size'] * PLANET_SCALE);
+
+          planet['obj_mesh'] = object;
+          scene.add(object);
+
+
+          var object_circle = new THREE.Mesh(geometry_cercle, material_cercle);
+          object_circle.position.set(0,0,0);
+          object_circle.scale.set(planet['rot_distance'], planet['rot_distance'], planet['rot_distance']);
+          //object_circle.rotation.z = Math.PI / 2 ;
+          planet['obj_mesh_circle'] = object_circle;
+          //scene.add(object_circle);
+        }
+      }
+      // * ray caster 
+      raycaster = new THREE.Raycaster();
+
+
+      // * renderer
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      //renderer.setClearColor(0xaaaaaa);
+      //renderer.context.disable(renderer.context.DEPTH_TEST);
+      document.body.appendChild(renderer.domElement);
+
+      // * Orbit controls
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.maxPolarAngle = Math.PI * 0.5;
+      controls.minDistance = 1;
+      controls.maxDistance = CAMERA_DISTANCE;
+      controls.addEventListener('change', render);
+
+      stats = new Stats();
+      document.body.appendChild(stats.dom);
+
+      document.addEventListener('mousemove', onDocumentMouseMove, false);
+
+      window.addEventListener('resize', onWindowResize, false);
+
+      var effectController = {
+
+        focalLength: 15,
+        // jsDepthCalculation: true,
+        // shaderFocus: false,
+        //
+        fstop: 2.8,
+        // maxblur: 1.0,
+        //
+        showFocus: false,
+        focalDepth: 3,
+        // manualdof: false,
+        // vignetting: false,
+        // depthblur: false,
+        //
+        // threshold: 0.5,
+        // gain: 2.0,
+        // bias: 0.5,
+        // fringe: 0.7,
+        //
+        // focalLength: 35,
+        // noise: true,
+        // pentagon: false,
+        //
+        // dithering: 0.0001
+      }
+      //
+
+      var gui = new GUI();
+
+
+      window.addEventListener('resize', onWindowResize, false);
+
+    }
+
+    function onWindowResize() {
+
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+
+      renderer.setSize(window.innerWidth, window.innerHeight);
+
+    }
+
+    function onDocumentMouseMove(event) {
+
+      event.preventDefault();
+
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
+
+    }
+
+    function animate() {
+
+      // move particles per frame
+      var time = Date.now() * 0.005;
+      particleSystem.rotation.z = 0.01 * time;
+      var sizes = geometry_particles.attributes.size.array;
+      for (var i = 0; i < PARTICLES; i++) {
+        sizes[i] = 2 + 2 * (1 + Math.sin(0.1 * i + time));
+      }
+      geometry_particles.attributes.size.needsUpdate = true;
+
+      // move planets per frame
+      planets.forEach(planet => {
+        // ex: {'size':100, 'rot_distance':100, 'rot_tilt':0 ,'rot_compress': 0 },
+        let object = planet['obj_mesh'];
+        object.position.x = Math.cos(tick_frame * ROT_SPEED * planet['rot_speed']) * planet['rot_distance'];
+        object.position.y = 0;
+        object.position.z = Math.sin(tick_frame * ROT_SPEED * planet['rot_speed']) * planet['rot_distance'];
+
+        object.rotation.set(tick_frame * ROT_SPEED * planet['rot_speed'] * 0.02, tick_frame * ROT_SPEED * planet['rot_speed'] * planet['size'] * 0.01, tick_frame * ROT_SPEED * planet['rot_speed'] / 2);
+
+        if( planet['name'] == 'sun' ){
+        }
+
+      });
+
+      tick_frame++;
+
+      requestAnimationFrame(animate, renderer.domElement);
+
+      render();
+      stats.update();
+
+    }
+
+
+    function render() {
+
+      // theta += 0.1;
+
+      // camera.position.x = CAMERA_DISTANCE * Math.sin(THREE.MathUtils.degToRad(theta));
+      // camera.position.y = CAMERA_DISTANCE * Math.sin(THREE.MathUtils.degToRad(theta));
+      // camera.position.z = CAMERA_DISTANCE * Math.cos(THREE.MathUtils.degToRad(theta));
+      // camera.lookAt(scene.position);
+
+      //  camera.updateMatrixWorld();
+
+      // find intersections
+
+      raycaster.setFromCamera(mouse, camera);
+
+      var intersects = raycaster.intersectObjects(scene.children);
+
+      if (intersects.length > 0) {
+
+        var targetDistance = intersects[0].distance;
+
+
+        if (INTERSECTED != intersects[0].object ) {
+
+          if (INTERSECTED) INTERSECTED.material.emissive.setHex(INTERSECTED.currentHex);
+
+          INTERSECTED = intersects[0].object;
+          INTERSECTED.currentHex = INTERSECTED.material.emissive.getHex();
+          INTERSECTED.material.emissive.setHex(0xffff00);
+
+        }
+
+      } else {
+
+        if (INTERSECTED && INTERSECTED.material.emissive) INTERSECTED.material.emissive.setHex(INTERSECTED.currentHex);
+
+        INTERSECTED = null;
+
+      }
+
+      //
+
+      // scene.overrideMaterial = null;
+
+      //renderer.clear();
+      renderer.render(scene, camera);
+
+    }
+
+  </script>
+</body>
+
+</html>
